@@ -1,0 +1,7 @@
+{
+  "name": "AgentRouter AI - Custom Agent Chat Studio",
+  "description": "Connect your AgentRouter or OpenAI-compatible API key to scrape models and chat with specialized AI agents in a sleek, customizable studio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
