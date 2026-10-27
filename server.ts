@@ -3,7 +3,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { parseModelsFromApi } from './src/utils/modelParser.js';
-import { getAgentRouterDocsAgents, AGENTROUTER_DOCS_RAW_MODELS } from './src/utils/agentrouterDocsData.js';
+import { scrapeAllLiveAgentsAndModels, scrapeLiveAgentRouterPortal } from './src/utils/liveScraper.js';
+import { generateDemoResponse } from './src/utils/chatManager.js';
+import { AgentModel } from './src/utils/modelCatalog.js';
 
 dotenv.config();
 
@@ -25,10 +27,9 @@ function cleanBaseUrl(url?: string): string {
   let cleaned = url.trim().replace(/\/+$/, '');
 
   // Strip trailing endpoint paths if accidentally entered by user
-  cleaned = cleaned.replace(/\/(models|chat\/completions|completions|docs\/index\.html|docs)$/i, '');
+  cleaned = cleaned.replace(/\/(models|chat\/completions|completions|docs\/index\.html|docs|portal\/models)$/i, '');
 
   // Map any agentrouter variations to the official API gateway: https://co.agentrouter.org/v1
-  // Handles: agentrouter.org, https://agentrouter.org, co.agentrouter.org, https://co.agentrouter.org, agentrouter.org/v1, etc.
   if (cleaned.toLowerCase().includes('agentrouter.org') || cleaned.toLowerCase().includes('agent-router.org')) {
     return 'https://co.agentrouter.org/v1';
   }
@@ -80,43 +81,66 @@ function getCandidateModelUrls(targetBaseUrl: string): string[] {
 
 /**
  * GET & POST /api/router/scrape-docs
- * Scrapes all agents directly from AgentRouter documentation (https://agentrouter.org/docs/index.html)
+ * Scrapes agents and models dynamically from AgentRouter live documentation & portal
+ * (Mirrors https://agentrouter.org/docs/index.html, claude-code.html, codex.html)
  */
-app.all('/api/router/scrape-docs', (_req: Request, res: Response) => {
-  const docsAgents = getAgentRouterDocsAgents();
-  return res.json({
-    success: true,
-    source: 'https://agentrouter.org/docs/index.html',
-    count: docsAgents.length,
-    models: docsAgents,
-    message: `Successfully scraped ${docsAgents.length} agents from AgentRouter documentation.`
-  });
+app.all('/api/router/scrape-docs', async (_req: Request, res: Response) => {
+  try {
+    const liveAgents = await scrapeAllLiveAgentsAndModels();
+    if (liveAgents.length > 0) {
+      return res.json({
+        success: true,
+        source: 'https://co.agentrouter.org/docs/docs & portal (Live Scraped)',
+        count: liveAgents.length,
+        models: liveAgents,
+        message: `Scraped ${liveAgents.length} agents & models live from AgentRouter documentation & portal.`
+      });
+    }
+    return res.status(502).json({
+      success: false,
+      error: 'Unable to scrape live models from AgentRouter documentation.'
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: `Scraping error: ${err?.message || 'Failed to reach documentation'}`
+    });
+  }
 });
 
 /**
  * POST /api/router/models
- * Scrapes models from the provided endpoint or AgentRouter documentation
+ * Strictly scrapes live models from the target API gateway or live documentation/portal
  */
 app.post('/api/router/models', async (req: Request, res: Response) => {
   const { apiKey, baseUrl } = req.body;
   const rawUrl = typeof baseUrl === 'string' ? baseUrl.trim() : '';
-  const isExplicitDocs = rawUrl.toLowerCase().includes('docs') || rawUrl.toLowerCase().includes('agentrouter.org/docs');
+  const isExplicitDocs = rawUrl.toLowerCase().includes('docs') || rawUrl.toLowerCase().includes('portal');
   const targetBaseUrl = cleanBaseUrl(baseUrl);
   const cleanKey = sanitizeApiKey(apiKey);
-  const isAgentRouter = targetBaseUrl.includes('agentrouter.org');
+  const isAgentRouter = targetBaseUrl.includes('agentrouter.org') || targetBaseUrl.includes('stepcode');
 
-  // If user explicitly asked to scrape docs or if no key is provided for AgentRouter, scrape docs catalog
-  if (isExplicitDocs || (isAgentRouter && !cleanKey)) {
-    const docsAgents = getAgentRouterDocsAgents();
-    return res.json({
-      success: true,
-      source: 'https://agentrouter.org/docs/index.html (AgentRouter Docs)',
-      count: docsAgents.length,
-      models: docsAgents,
-      message: `Successfully scraped ${docsAgents.length} agents from AgentRouter documentation!`
-    });
+  // When targeting AgentRouter, ALWAYS scrape live from official documentation & portal
+  // (AgentRouter models are documented in claude-code.html, codex.html and /portal/models;
+  // /v1/models returns 401 and must not be used as a validation gate)
+  if (isAgentRouter || isExplicitDocs) {
+    try {
+      const liveAgents = await scrapeAllLiveAgentsAndModels();
+      if (liveAgents.length > 0) {
+        return res.json({
+          success: true,
+          source: 'https://co.agentrouter.org/docs/docs & portal (Live Scraped)',
+          count: liveAgents.length,
+          models: liveAgents,
+          message: `Scraped ${liveAgents.length} agents & models live from AgentRouter docs (Claude Code, Codex, Cline, Roo Code, etc.)`
+        });
+      }
+    } catch (e: any) {
+      console.warn('Live scraper fallback warning:', e?.message);
+    }
   }
 
+  // If user pointed to another custom provider (e.g. self-hosted / OpenRouter / Ollama)
   const candidateUrls = getCandidateModelUrls(targetBaseUrl);
   let lastError = '';
   let lastStatus = 400;
@@ -135,8 +159,6 @@ app.post('/api/router/models', async (req: Request, res: Response) => {
 
       if (cleanKey) {
         reqHeaders['Authorization'] = `Bearer ${cleanKey}`;
-        reqHeaders['x-api-key'] = cleanKey;
-        reqHeaders['x-goog-api-key'] = cleanKey;
       }
 
       const remoteRes = await fetch(modelsUrl, {
@@ -149,27 +171,15 @@ app.post('/api/router/models', async (req: Request, res: Response) => {
 
       const contentType = remoteRes.headers.get('content-type') || '';
 
-      // If the endpoint returned JSON
       if (contentType.includes('application/json')) {
         const data = await remoteRes.json();
 
-        // Check if AgentRouter returned an explicit error object (e.g. code: 401, msg: "Invalid API Key!")
+        // Check if gateway returned an explicit error object
         if (data && (data.code === 401 || data.code === 403 || data.error)) {
-          // If authorization fails but target is AgentRouter, gracefully return the documented agents catalog with advisory
-          if (isAgentRouter) {
-            const docsAgents = getAgentRouterDocsAgents();
-            return res.json({
-              success: true,
-              source: 'https://agentrouter.org/docs/index.html',
-              count: docsAgents.length,
-              models: docsAgents,
-              message: `Scraped ${docsAgents.length} official AgentRouter agents from docs. Note: Gateway reported key issue (${data.msg || 'Invalid API Key'}).`
-            });
-          }
           const errorMsg = data.msg || data.error?.message || data.message || 'Authorization failed. Please check your API key.';
-          return res.status(data.code || 401).json({
+          return res.status(data.code || remoteRes.status || 401).json({
             success: false,
-            error: `${errorMsg} (Gateway returned status ${data.code || 401})`
+            error: `${errorMsg} (Gateway returned status ${data.code || remoteRes.status || 401})`
           });
         }
 
@@ -181,51 +191,25 @@ app.post('/api/router/models', async (req: Request, res: Response) => {
             source: modelsUrl,
             count: parsedModels.length,
             models: parsedModels,
-            message: `Successfully scraped ${parsedModels.length} models directly from ${modelsUrl}.`
+            message: `Successfully scraped ${parsedModels.length} models from ${modelsUrl}.`
           });
         }
 
         lastError = `Endpoint ${modelsUrl} returned 0 models.`;
       } else if (remoteRes.status === 401) {
-        if (isAgentRouter) {
-          const docsAgents = getAgentRouterDocsAgents();
-          return res.json({
-            success: true,
-            source: 'https://agentrouter.org/docs/index.html',
-            count: docsAgents.length,
-            models: docsAgents,
-            message: `Scraped ${docsAgents.length} official AgentRouter agents from docs. Gateway returned 401 Unauthorized.`
-          });
-        }
         return res.status(401).json({
           success: false,
           error: 'Invalid API Key. The gateway rejected authorization (401 Unauthorized). Please verify your API key.'
         });
       } else {
         const bodyText = await remoteRes.text().catch(() => '');
-        if (bodyText.includes('<html') || bodyText.includes('<!DOCTYPE')) {
-          lastError = `Gateway challenge page received from ${modelsUrl} (HTTP ${remoteRes.status}).`;
-        } else {
-          lastError = `Gateway returned HTTP ${remoteRes.status}: ${bodyText.slice(0, 160)}`;
-        }
+        lastError = `Gateway returned HTTP ${remoteRes.status}: ${bodyText.slice(0, 160)}`;
         lastStatus = remoteRes.status || 400;
       }
     } catch (err: any) {
       lastError = `Network connection error to ${modelsUrl}: ${err?.message || 'Connection timed out'}`;
       lastStatus = 504;
     }
-  }
-
-  // If live query failed for agent router, fallback to docs catalog so user is never blocked
-  if (isAgentRouter) {
-    const docsAgents = getAgentRouterDocsAgents();
-    return res.json({
-      success: true,
-      source: 'https://agentrouter.org/docs/index.html',
-      count: docsAgents.length,
-      models: docsAgents,
-      message: `Scraped ${docsAgents.length} official AgentRouter agents from documentation!`
-    });
   }
 
   return res.status(lastStatus || 400).json({
@@ -249,10 +233,33 @@ app.post('/api/router/chat', async (req: Request, res: Response) => {
   res.setHeader('X-Accel-Buffering', 'no');
 
   if (!cleanKey) {
-    const errChunk = JSON.stringify({
-      choices: [{ delta: { content: '**Error**: API Key is required to chat with this model.' } }]
-    });
-    res.write(`data: ${errChunk}\n\n`);
+    const lastUserMsg = Array.isArray(messages)
+      ? [...messages].reverse().find(m => m.role === 'user')?.content || ''
+      : '';
+    const demoAgent: AgentModel = {
+      id: typeof model === 'string' ? model : 'claude-opus-4-8',
+      name: typeof model === 'string' && model ? model.replace(/[-_]/g, ' ') : 'Claude Opus',
+      provider: 'Anthropic',
+      category: 'Coding',
+      contextWindow: 128000,
+      description: 'BranchLabs Coding Agent',
+      systemPrompt: '',
+      suggestedPrompts: []
+    };
+    const responseText = generateDemoResponse(demoAgent, lastUserMsg);
+
+    const chunks: string[] = [];
+    const chunkSize = 20;
+    for (let i = 0; i < responseText.length; i += chunkSize) {
+      chunks.push(responseText.slice(i, i + chunkSize));
+    }
+    for (const piece of chunks) {
+      const chunk = JSON.stringify({
+        choices: [{ delta: { content: piece } }]
+      });
+      res.write(`data: ${chunk}\n\n`);
+      await new Promise(r => setTimeout(r, 10));
+    }
     res.write('data: [DONE]\n\n');
     return res.end();
   }
@@ -281,8 +288,35 @@ app.post('/api/router/chat', async (req: Request, res: Response) => {
       }
     }
 
+    // Resolve model ID: handle agent IDs, compound IDs, or direct models
+    let resolvedModel = typeof model === 'string' ? model.trim() : '';
+    if (resolvedModel.includes(':')) {
+      resolvedModel = resolvedModel.split(':')[1].trim();
+    }
+    const agentModelMap: Record<string, string> = {
+      'agent-claude-code': 'claude-opus-4-8',
+      'agent-claude-code-vscode': 'claude-opus-4-7',
+      'agent-codex': 'gpt-5.5',
+      'agent-cline': 'claude-opus-4-8',
+      'agent-roo-code': 'claude-opus-4-6',
+      'agent-kilo-code': 'claude-opus-4-8',
+      'agent-opencode': 'step3p5-code-alpha',
+      'agent-qwen-code': 'step3p5-code-alpha',
+      'agent-crush': 'step3p5-code-alpha',
+      'agent-droid': 'step3p5-code-alpha',
+      'agent-openclaw': 'step3p5-code-alpha',
+      'agent-hermes': 'step3p5-code-alpha',
+      'agent-pi': 'step3p5-code-alpha',
+      'agent-claude-code-app': 'claude-opus-4-7',
+      'agent-trae': 'claude-opus-4-8',
+      'agent-craft': 'claude-opus-4-8'
+    };
+    if (agentModelMap[resolvedModel]) {
+      resolvedModel = agentModelMap[resolvedModel];
+    }
+
     const payload = {
-      model: typeof model === 'string' ? model.trim() : model,
+      model: resolvedModel,
       messages: formattedMessages,
       temperature: typeof temperature === 'number' ? temperature : 0.7,
       max_tokens: typeof maxTokens === 'number' ? maxTokens : 2048,
@@ -293,14 +327,17 @@ app.post('/api/router/chat', async (req: Request, res: Response) => {
 
     const reqHeaders: Record<string, string> = {
       'Authorization': `Bearer ${cleanKey}`,
-      'x-api-key': cleanKey,
-      'x-goog-api-key': cleanKey,
       'Content-Type': 'application/json',
       'Accept': 'text/event-stream, application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       'HTTP-Referer': 'https://agentrouter.org',
       'X-Title': 'AgentRouter Client'
     };
+
+    if (resolvedModel.includes('claude') || resolvedModel.includes('opus')) {
+      reqHeaders['x-api-key'] = cleanKey;
+      reqHeaders['anthropic-version'] = '2023-06-01';
+    }
 
     const remoteRes = await fetch(completionsUrl, {
       method: 'POST',

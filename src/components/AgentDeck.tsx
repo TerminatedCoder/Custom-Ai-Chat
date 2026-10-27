@@ -1,7 +1,7 @@
 import React from 'react';
 import { AgentModel } from '../utils/modelCatalog';
 import { ChatSession } from '../utils/chatManager';
-import { Layers, MessageSquare, Trash2, Sliders, Shield, RefreshCw, X, Key } from 'lucide-react';
+import { Layers, MessageSquare, Trash2, Sliders, Shield, RefreshCw, X, Key, Sparkles } from 'lucide-react';
 
 interface AgentDeckProps {
   agents: AgentModel[];
@@ -15,6 +15,7 @@ interface AgentDeckProps {
   onOpenConfig: () => void;
   onOpenApiKey: () => void;
   onOpenAddCustom?: () => void;
+  onOpenPersonality?: () => void;
   apiKey: string;
   onScrapeModels: () => void;
   onScrapeDocs?: () => void;
@@ -36,6 +37,7 @@ export const AgentDeck: React.FC<AgentDeckProps> = ({
   onOpenConfig,
   onOpenApiKey,
   onOpenAddCustom,
+  onOpenPersonality,
   apiKey,
   onScrapeModels,
   onScrapeDocs,
@@ -57,7 +59,7 @@ export const AgentDeck: React.FC<AgentDeckProps> = ({
   };
 
   const content = (
-    <div className="w-72 sm:w-80 md:w-72 bg-neutral-900 border-r border-neutral-800 flex flex-col h-full shrink-0 select-none">
+    <div className="w-72 sm:w-80 md:w-72 bg-[#12151e]/95 backdrop-blur-md border-r border-white/5 flex flex-col h-full shrink-0 select-none">
       {/* Header with Mobile Close button */}
       <div className="p-3.5 border-b border-neutral-800 flex flex-col gap-2">
         <div className="flex items-center justify-between w-full">
@@ -260,7 +262,24 @@ export const AgentDeck: React.FC<AgentDeckProps> = ({
       </div>
 
       {/* Bottom Section: Agent Fine-Tuning & Key Status */}
-      <div className="p-3.5 border-t border-neutral-800 bg-neutral-900 space-y-2">
+      <div className="p-3.5 border-t border-white/5 bg-[#12151e] space-y-2">
+        {onOpenPersonality && (
+          <button
+            onClick={() => {
+              onOpenPersonality();
+              if (onCloseMobile) onCloseMobile();
+            }}
+            className="w-full px-3 py-2 rounded-lg bg-indigo-950/30 hover:bg-indigo-950/60 text-indigo-300 hover:text-white transition-colors text-xs flex items-center justify-between border border-indigo-500/25 min-h-[40px] cursor-pointer"
+            aria-label="Customize AI character persona"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+              <span>AI Character Persona</span>
+            </div>
+            <span className="text-[11px] text-indigo-400 font-medium">Custom</span>
+          </button>
+        )}
+
         {activeAgent && (
           <button
             onClick={() => {

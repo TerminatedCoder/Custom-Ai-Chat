@@ -34,6 +34,14 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     }, 600);
   };
 
+  const handleKeyChange = (val: string) => {
+    setInputKey(val);
+    const trimmed = val.trim();
+    if (trimmed.startsWith('sk-or-') && inputUrl.includes('agentrouter.org')) {
+      setInputUrl('https://openrouter.ai/api/v1');
+    }
+  };
+
   const handleQuickPreset = (url: string) => {
     setInputUrl(url);
   };
@@ -94,21 +102,35 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
               className="w-full bg-neutral-800/90 text-neutral-100 placeholder-neutral-500 text-base sm:text-xs rounded-xl px-3.5 py-2.5 border border-neutral-700/60 focus:outline-hidden focus:border-indigo-500 font-mono"
             />
             {/* Quick Presets */}
-            <div className="flex items-center gap-1.5 mt-2">
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
               <span className="text-[11px] text-neutral-500">Presets:</span>
               <button
                 type="button"
                 onClick={() => handleQuickPreset('https://co.agentrouter.org/v1')}
-                className="px-2.5 py-1 rounded text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors border border-neutral-700/50 min-h-[30px]"
+                className="px-2 py-0.5 rounded text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors border border-neutral-700/50 min-h-[28px]"
               >
-                agentrouter.org (co)
+                agentrouter.org
               </button>
               <button
                 type="button"
                 onClick={() => handleQuickPreset('https://openrouter.ai/api/v1')}
-                className="px-2.5 py-1 rounded text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors border border-neutral-700/50 min-h-[30px]"
+                className="px-2 py-0.5 rounded text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors border border-neutral-700/50 min-h-[28px]"
               >
                 openrouter.ai
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickPreset('https://api.openai.com/v1')}
+                className="px-2 py-0.5 rounded text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors border border-neutral-700/50 min-h-[28px]"
+              >
+                openai.com
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickPreset('https://api.deepseek.com/v1')}
+                className="px-2 py-0.5 rounded text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors border border-neutral-700/50 min-h-[28px]"
+              >
+                deepseek.com
               </button>
             </div>
           </div>
@@ -134,7 +156,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
               <input
                 type={showKey ? 'text' : 'password'}
                 value={inputKey}
-                onChange={e => setInputKey(e.target.value)}
+                onChange={e => handleKeyChange(e.target.value)}
                 placeholder="sk-..."
                 className="w-full bg-neutral-800/90 text-neutral-100 placeholder-neutral-500 text-base sm:text-xs rounded-xl pl-3.5 pr-10 py-2.5 border border-neutral-700/60 focus:outline-hidden focus:border-indigo-500 font-mono"
               />

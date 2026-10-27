@@ -1,5 +1,5 @@
 import React from 'react';
-import { Key, Globe, Plus, ShieldCheck, Layers, Menu } from 'lucide-react';
+import { Key, Globe, Plus, ShieldCheck, Layers, Menu, Sparkles } from 'lucide-react';
 import { AgentModel } from '../utils/modelCatalog';
 
 interface HeaderProps {
@@ -11,6 +11,7 @@ interface HeaderProps {
   onToggleMobileDrawer: () => void;
   onScrapeDocs?: () => void;
   onOpenAddCustom?: () => void;
+  onOpenPersonality?: () => void;
   scrapedCount: number;
 }
 
@@ -23,10 +24,11 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleMobileDrawer,
   onScrapeDocs,
   onOpenAddCustom,
+  onOpenPersonality,
   scrapedCount
 }) => {
   return (
-    <header className="flex items-center justify-between gap-4 md:gap-8 px-4 md:px-6 py-3 bg-neutral-900 border-b border-neutral-800 shrink-0">
+    <header className="flex items-center justify-between gap-4 md:gap-8 px-4 md:px-6 py-3 bg-[#12151d]/85 backdrop-blur-md border-b border-white/5 shrink-0 z-30">
       {/* Zone 1: Brand Wordmark & Mobile Drawer Trigger */}
       <div className="flex items-center gap-2.5 shrink-0">
         <button
@@ -42,10 +44,10 @@ export const Header: React.FC<HeaderProps> = ({
           href="/"
           className="text-base md:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 flex items-center gap-2 hover:opacity-90 transition-opacity"
         >
-          <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-sm font-display font-semibold text-sm md:text-base">
-            AR
+          <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-sm font-display font-semibold text-xs md:text-sm">
+            BL
           </div>
-          <span>AgentRouter</span>
+          <span>BranchLabs</span>
         </a>
       </div>
 
@@ -77,6 +79,17 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Plus className="w-3 h-3 text-indigo-400" />
             <span>Add Custom</span>
+          </button>
+        )}
+
+        {onOpenPersonality && (
+          <button
+            onClick={onOpenPersonality}
+            className="text-xs px-2.5 py-1 rounded-lg bg-indigo-950/40 text-indigo-300 hover:text-white border border-indigo-500/30 transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Configure AI character persona and custom instructions"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Persona</span>
           </button>
         )}
 

@@ -115,21 +115,18 @@ test('parseModelsFromApi supports camelCase contextLength and custom envelopes',
   assert.equal(parsed[0].contextWindow, 1047576);
 });
 
-test('getAgentRouterDocsAgents loads all documented agents with complete specs', async () => {
-  const { getAgentRouterDocsAgents } = await import('./agentrouterDocsData.js');
-  const agents = getAgentRouterDocsAgents();
-  assert.ok(agents.length >= 20, 'Should load all documented AgentRouter agents');
-  const opus = agents.find(a => a.id === 'agentrouter/claude-opus-4-8');
-  assert.ok(opus, 'Should include Claude Opus 4.8');
-  assert.equal(opus.contextWindow, 1000000);
-  assert.equal(opus.provider, 'Anthropic');
+test('scrapeAllLiveAgentsAndModels extracts live documentation agents and models', async () => {
+  const { scrapeAllLiveAgentsAndModels } = await import('./liveScraper.js');
+  const agents = await scrapeAllLiveAgentsAndModels();
+  assert.ok(agents.length > 0, 'Should scrape live agents from docs and portal');
+  
+  // Verify Claude agent is scraped
+  const claude = agents.find(a => a.id === 'agent-claude-code' || a.actualModelId === 'claude-opus-4-8');
+  assert.ok(claude, 'Should include Claude agent from docs');
 
-  const gpt5 = agents.find(a => a.id === 'agentrouter/gpt-5.6-sol');
-  assert.ok(gpt5, 'Should include GPT-5.6 Sol');
-  assert.equal(gpt5.provider, 'OpenAI');
-
-  const deepseek = agents.find(a => a.id === 'agentrouter/deepseek-v4-flash');
-  assert.ok(deepseek, 'Should include DeepSeek V4 Flash');
-  assert.equal(deepseek.provider, 'DeepSeek');
+  // Verify Codex agent is scraped
+  const codex = agents.find(a => a.id === 'agent-codex' || a.actualModelId === 'gpt-5.5');
+  assert.ok(codex, 'Should include Codex agent from docs');
 });
+
 

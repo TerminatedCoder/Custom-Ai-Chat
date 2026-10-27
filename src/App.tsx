@@ -6,7 +6,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AgentModel } from './utils/modelCatalog';
 import { createManualAgentModel } from './utils/modelParser';
-import { ChatMessage, ChatSession, parseSSEBuffer } from './utils/chatManager';
+import {
+  ChatMessage,
+  ChatSession,
+  parseSSEBuffer,
+  CustomPersonality,
+  PERSONALITY_PRESETS,
+  branchUserMessage,
+  switchMessageBranch,
+  AttachedFile
+} from './utils/chatManager';
+import { getFileExtension, formatBytes } from './utils/codeUtils';
 import { Header } from './components/Header';
 import { AgentDeck } from './components/AgentDeck';
 import { ChatMessageView } from './components/ChatMessageView';
@@ -15,7 +25,8 @@ import { ModelCatalogModal } from './components/ModelCatalogModal';
 import { AgentConfigModal } from './components/AgentConfigModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { AddCustomAgentModal } from './components/AddCustomAgentModal';
-import { getAgentRouterDocsAgents } from './utils/agentrouterDocsData';
+import { CustomPersonalityModal } from './components/CustomPersonalityModal';
+import { CodeSlideWindow } from './components/CodeSlideWindow';
 import {
   Bot,
   Sparkles,
@@ -35,6 +46,13 @@ import {
 } from 'lucide-react';
 
 export default function App() {
+  // Purge any previously stored predefined models
+  useEffect(() => {
+    localStorage.removeItem('ar_scraped_models');
+    localStorage.removeItem('ar_scraped_models_v2');
+    localStorage.removeItem('ar_scraped_models_v3');
+  }, []);
+
   // Credentials & Gateway config
   const [apiKey, setApiKey] = useState<string>(() => {
     return localStorage.getItem('ar_api_key') || '';
@@ -47,29 +65,27 @@ export default function App() {
     return saved;
   });
 
-  // Scraped Models catalog (from AgentRouter documentation & live API)
+  // Strictly scraped models (starts empty, NO predefined or demo models)
   const [models, setModels] = useState<AgentModel[]>(() => {
-    const cached = localStorage.getItem('ar_scraped_models_v3');
+    const cached = localStorage.getItem('ar_scraped_models_live');
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch (e) {}
     }
-    // Pre-populate with all official agents scraped from AgentRouter docs
-    return getAgentRouterDocsAgents();
+    return [];
   });
 
   const [activeAgent, setActiveAgent] = useState<AgentModel | null>(() => {
-    const cached = localStorage.getItem('ar_scraped_models_v3');
+    const cached = localStorage.getItem('ar_scraped_models_live');
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
       } catch (e) {}
     }
-    const initial = getAgentRouterDocsAgents();
-    return initial.length > 0 ? initial[0] : null;
+    return null;
   });
 
   // Chat sessions & messages
@@ -81,11 +97,10 @@ export default function App() {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch (e) {}
     }
-    const initialAgent = getAgentRouterDocsAgents()[0];
     const initialSession: ChatSession = {
       id: 'session_' + Date.now(),
-      title: initialAgent ? `${initialAgent.name.split(' ')[0]} Chat` : 'New Conversation',
-      agentId: initialAgent ? initialAgent.id : '',
+      title: 'New Conversation',
+      agentId: '',
       createdAt: Date.now(),
       updatedAt: Date.now(),
       messages: []
@@ -111,12 +126,56 @@ export default function App() {
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [isAddCustomModalOpen, setIsAddCustomModalOpen] = useState(false);
+  const [isPersonalityModalOpen, setIsPersonalityModalOpen] = useState(false);
+
+  // Custom AI character & instructions state
+  const [customPersonalityId, setCustomPersonalityId] = useState<string>(() => {
+    return localStorage.getItem('ar_personality_id') || '';
+  });
+  const [customInstructions, setCustomInstructions] = useState<string>(() => {
+    return localStorage.getItem('ar_custom_instructions') || '';
+  });
 
   // In-page setup state for first time users
   const [setupKeyInput, setSetupKeyInput] = useState('');
   const [setupUrlInput, setSetupUrlInput] = useState('https://co.agentrouter.org/v1');
   const [showSetupKey, setShowSetupKey] = useState(false);
   const [directModelInput, setDirectModelInput] = useState('');
+
+  // Attached files for chat
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+
+  // Code Slide Window state
+  const [codeSlideData, setCodeSlideData] = useState<{
+    isOpen: boolean;
+    fileName: string;
+    code: string;
+    language: string;
+  }>({
+    isOpen: false,
+    fileName: '',
+    code: '',
+    language: ''
+  });
+
+  const handleAddFiles = (newFiles: AttachedFile[]) => {
+    setAttachedFiles(prev => [...prev, ...newFiles]);
+  };
+
+  const handleRemoveFile = (fileId: string) => {
+    setAttachedFiles(prev => prev.filter(f => f.id !== fileId));
+  };
+
+  const handleOpenCodeSlide = (payload: { code: string; language: string; fileName: string }) => {
+    setCodeSlideData({
+      isOpen: true,
+      ...payload
+    });
+  };
+
+  const handleCloseCodeSlide = () => {
+    setCodeSlideData(prev => ({ ...prev, isOpen: false }));
+  };
 
   // References
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -134,9 +193,9 @@ export default function App() {
   // Persist scraped models strictly
   useEffect(() => {
     if (models.length > 0) {
-      localStorage.setItem('ar_scraped_models_v3', JSON.stringify(models));
+      localStorage.setItem('ar_scraped_models_live', JSON.stringify(models));
     } else {
-      localStorage.removeItem('ar_scraped_models_v3');
+      localStorage.removeItem('ar_scraped_models_live');
     }
   }, [models]);
 
@@ -147,6 +206,7 @@ export default function App() {
     localStorage.removeItem('ar_scraped_models');
     localStorage.removeItem('ar_scraped_models_v2');
     localStorage.removeItem('ar_scraped_models_v3');
+    localStorage.removeItem('ar_scraped_models_live');
     setScrapeStatusMessage('');
     setScrapeError('');
   };
@@ -189,12 +249,12 @@ export default function App() {
   };
 
   /**
-   * Scrape all agents from AgentRouter documentation
+   * Scrape all agents from AgentRouter live portal / documentation
    */
   const handleScrapeDocs = async () => {
     setIsScraping(true);
     setScrapeError('');
-    setScrapeStatusMessage('Scraping agents from https://agentrouter.org/docs/index.html...');
+    setScrapeStatusMessage('Scraping live models from https://co.agentrouter.org/portal/models...');
 
     try {
       const res = await fetch('/api/router/scrape-docs');
@@ -205,16 +265,14 @@ export default function App() {
         if (!activeAgent || !data.models.some((m: AgentModel) => m.id === activeAgent.id)) {
           setActiveAgent(data.models[0]);
         }
-        setScrapeStatusMessage(data.message || `Scraped ${data.models.length} agents from AgentRouter documentation!`);
+        setScrapeStatusMessage(data.message || `Scraped ${data.models.length} models live from AgentRouter!`);
       } else {
-        const docs = getAgentRouterDocsAgents();
-        setModels(docs);
-        setScrapeStatusMessage(`Loaded ${docs.length} agents from AgentRouter docs.`);
+        setScrapeError(data.error || 'Failed to scrape live models from AgentRouter.');
+        setScrapeStatusMessage('');
       }
     } catch (err: any) {
-      const docs = getAgentRouterDocsAgents();
-      setModels(docs);
-      setScrapeStatusMessage(`Loaded ${docs.length} agents from AgentRouter docs.`);
+      setScrapeError(`Network error while scraping: ${err?.message || 'Check connection'}`);
+      setScrapeStatusMessage('');
     } finally {
       setIsScraping(false);
     }
@@ -399,55 +457,51 @@ export default function App() {
     );
   };
 
+  const activePersonality = PERSONALITY_PRESETS.find(p => p.id === customPersonalityId);
+
   /**
-   * Send User Message and Stream Agent Response
+   * Save Custom Personality & Instructions
    */
-  const handleSendMessage = async (textToSend: string = input) => {
-    const trimmed = textToSend.trim();
-    if (!trimmed || isStreaming || !activeAgent) return;
+  const handleSavePersonality = (preset?: CustomPersonality, customText?: string) => {
+    const pId = preset ? preset.id : '';
+    const text = customText ?? '';
+    setCustomPersonalityId(pId);
+    setCustomInstructions(text);
+    localStorage.setItem('ar_personality_id', pId);
+    localStorage.setItem('ar_custom_instructions', text);
+    setScrapeStatusMessage(preset ? `Applied ${preset.name} persona.` : 'Custom instructions applied.');
+    setTimeout(() => setScrapeStatusMessage(''), 3000);
+  };
 
-    setInput('');
+  /**
+   * Reset Personality to default
+   */
+  const handleClearPersonality = () => {
+    setCustomPersonalityId('');
+    setCustomInstructions('');
+    localStorage.removeItem('ar_personality_id');
+    localStorage.removeItem('ar_custom_instructions');
+    setScrapeStatusMessage('Reset AI character to default agent persona.');
+    setTimeout(() => setScrapeStatusMessage(''), 3000);
+  };
 
-    const userMessage: ChatMessage = {
-      id: 'msg_' + Date.now(),
-      role: 'user',
-      content: trimmed,
-      timestamp: Date.now()
-    };
-
-    const assistantMessageId = 'msg_ast_' + (Date.now() + 1);
-    const placeholderAssistantMessage: ChatMessage = {
-      id: assistantMessageId,
-      role: 'assistant',
-      content: '',
-      thought: '',
-      timestamp: Date.now() + 1,
-      modelId: activeAgent.id,
-      provider: activeAgent.provider
-    };
-
-    const updatedTitle =
-      activeMessages.length === 0
-        ? trimmed.slice(0, 32) + (trimmed.length > 32 ? '...' : '')
-        : activeSession.title;
-
-    const newMessages = [...activeMessages, userMessage];
-
-    setSessions(prev =>
-      prev.map(s =>
-        s.id === activeSession.id
-          ? {
-              ...s,
-              title: updatedTitle,
-              messages: [...newMessages, placeholderAssistantMessage],
-              updatedAt: Date.now()
-            }
-          : s
-      )
-    );
+  /**
+   * Reusable streaming response runner for new chats and branching forks
+   */
+  const executeStreamResponse = async (contextMessages: ChatMessage[], assistantMessageId: string) => {
+    if (!activeAgent) return;
 
     setIsStreaming(true);
     abortControllerRef.current = new AbortController();
+
+    // Construct enriched system prompt incorporating agent persona + custom character instructions
+    let enrichedSystemPrompt = activeAgent.systemPrompt;
+    if (activePersonality) {
+      enrichedSystemPrompt += `\n\n[Active Personality Role: ${activePersonality.name}]\n${activePersonality.instructions}`;
+    }
+    if (customInstructions && customInstructions.trim()) {
+      enrichedSystemPrompt += `\n\n[Custom User Instructions]:\n${customInstructions.trim()}`;
+    }
 
     try {
       const response = await fetch('/api/router/chat', {
@@ -456,9 +510,10 @@ export default function App() {
         body: JSON.stringify({
           apiKey,
           baseUrl,
-          model: activeAgent.id,
-          messages: newMessages,
-          systemPrompt: activeAgent.systemPrompt,
+          model: activeAgent.actualModelId || activeAgent.id,
+          protocol: activeAgent.protocol,
+          messages: contextMessages,
+          systemPrompt: enrichedSystemPrompt,
           temperature: activeAgent.temperature ?? 0.7,
           maxTokens: activeAgent.maxTokens ?? 2048
         }),
@@ -539,6 +594,161 @@ export default function App() {
   };
 
   /**
+   * Send User Message and Stream Agent Response (supporting attached files)
+   */
+  const handleSendMessage = async (textToSend: string = input) => {
+    const trimmed = textToSend.trim();
+    if ((!trimmed && attachedFiles.length === 0) || isStreaming || !activeAgent) return;
+
+    const currentAttachments = [...attachedFiles];
+    setInput('');
+    setAttachedFiles([]);
+
+    // Construct prompt context with attached files formatted
+    let effectiveContent = trimmed;
+    if (currentAttachments.length > 0) {
+      const fileHeaders = currentAttachments
+        .map(f => {
+          if (f.isImage) {
+            return `[Attached Image: ${f.name} (${formatBytes(f.size)})]`;
+          }
+          const ext = getFileExtension(f.name.split('.').pop() || 'txt');
+          return `[Attached File: ${f.name} (${formatBytes(f.size)})]\n\`\`\`${ext}\n${f.content}\n\`\`\``;
+        })
+        .join('\n\n');
+
+      effectiveContent = trimmed
+        ? `${fileHeaders}\n\nUser Question/Instruction:\n${trimmed}`
+        : `${fileHeaders}\n\nPlease inspect the above attached file(s) and provide a comprehensive analysis or requested code implementation.`;
+    }
+
+    const displayPrompt =
+      trimmed ||
+      (currentAttachments.length > 0
+        ? `Attached ${currentAttachments.length} file${currentAttachments.length === 1 ? '' : 's'}`
+        : '');
+
+    const userMessage: ChatMessage = {
+      id: 'msg_' + Date.now(),
+      role: 'user',
+      content: displayPrompt,
+      timestamp: Date.now(),
+      attachments: currentAttachments.length > 0 ? currentAttachments : undefined
+    };
+
+    const contextUserMessage: ChatMessage = {
+      ...userMessage,
+      content: effectiveContent
+    };
+
+    const assistantMessageId = 'msg_ast_' + (Date.now() + 1);
+    const placeholderAssistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      thought: '',
+      timestamp: Date.now() + 1,
+      modelId: activeAgent.id,
+      provider: activeAgent.provider
+    };
+
+    const updatedTitle =
+      activeMessages.length === 0
+        ? displayPrompt.slice(0, 32) + (displayPrompt.length > 32 ? '...' : '')
+        : activeSession.title;
+
+    const newMessages = [...activeMessages, userMessage];
+    const streamContextMessages = [...activeMessages, contextUserMessage];
+
+    setSessions(prev =>
+      prev.map(s =>
+        s.id === activeSession.id
+          ? {
+              ...s,
+              title: updatedTitle,
+              messages: [...newMessages, placeholderAssistantMessage],
+              updatedAt: Date.now()
+            }
+          : s
+      )
+    );
+
+    executeStreamResponse(streamContextMessages, assistantMessageId);
+  };
+
+  /**
+   * Conversation Branching: Edit previously sent message and fork the conversation path
+   */
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    if (isStreaming) {
+      abortControllerRef.current?.abort();
+      setIsStreaming(false);
+    }
+
+    const { updatedMessages, targetIndex } = branchUserMessage(activeMessages, messageId, newContent);
+    if (targetIndex === -1 || !activeAgent) return;
+
+    const assistantMessageId = 'msg_ast_' + (Date.now() + 1);
+    const placeholderAssistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      thought: '',
+      timestamp: Date.now() + 1,
+      modelId: activeAgent.id,
+      provider: activeAgent.provider
+    };
+
+    const finalMessages = [...updatedMessages, placeholderAssistantMessage];
+
+    setSessions(prev =>
+      prev.map(s =>
+        s.id === activeSession.id
+          ? {
+              ...s,
+              messages: finalMessages,
+              updatedAt: Date.now()
+            }
+          : s
+      )
+    );
+
+    executeStreamResponse(updatedMessages, assistantMessageId);
+  };
+
+  /**
+   * Conversation Branching: Toggle between previous branches
+   */
+  const handleSwitchBranch = (messageId: string, branchIndex: number) => {
+    if (isStreaming) {
+      abortControllerRef.current?.abort();
+      setIsStreaming(false);
+    }
+
+    const switchedMessages = switchMessageBranch(activeMessages, messageId, branchIndex);
+
+    setSessions(prev =>
+      prev.map(s =>
+        s.id === activeSession.id
+          ? {
+              ...s,
+              messages: switchedMessages,
+              updatedAt: Date.now()
+            }
+          : s
+      )
+    );
+  };
+
+  /**
+   * Contextual Action Chip Trigger
+   */
+  const handleActionChipClick = (prompt: string) => {
+    if (isStreaming) return;
+    handleSendMessage(prompt);
+  };
+
+  /**
    * Stop generation
    */
   const handleStopGeneration = () => {
@@ -560,6 +770,7 @@ export default function App() {
         onToggleMobileDrawer={() => setIsMobileDrawerOpen(!isMobileDrawerOpen)}
         onScrapeDocs={handleScrapeDocs}
         onOpenAddCustom={() => setIsAddCustomModalOpen(true)}
+        onOpenPersonality={() => setIsPersonalityModalOpen(true)}
         scrapedCount={models.length}
       />
 
@@ -578,6 +789,7 @@ export default function App() {
           onOpenConfig={() => setIsConfigModalOpen(true)}
           onOpenApiKey={() => setIsApiKeyModalOpen(true)}
           onOpenAddCustom={() => setIsAddCustomModalOpen(true)}
+          onOpenPersonality={() => setIsPersonalityModalOpen(true)}
           apiKey={apiKey}
           onScrapeModels={() => handleScrapeModels(apiKey, baseUrl)}
           onScrapeDocs={handleScrapeDocs}
@@ -587,16 +799,16 @@ export default function App() {
           onCloseMobile={() => setIsMobileDrawerOpen(false)}
         />
 
-        {/* Center / Chat Stage */}
-        <main className="flex-1 flex flex-col h-full bg-[#0d121c] relative overflow-hidden min-w-0 pb-14 md:pb-0">
-          {/* Agent HUD Bar */}
-          <div className="h-11 sm:h-12 px-3 sm:px-6 border-b border-neutral-800 flex items-center justify-between shrink-0 bg-neutral-900/40">
+        {/* Center / Chat Stage with Refined Dark Mode */}
+        <main className="flex-1 flex flex-col h-full bg-[#0f1218] relative overflow-hidden min-w-0 pb-16 md:pb-0">
+          {/* Agent HUD Bar with Frosted Glassmorphism */}
+          <div className="h-11 sm:h-12 px-3 sm:px-6 border-b border-white/5 flex items-center justify-between shrink-0 bg-[#12151d]/85 backdrop-blur-md z-10">
             <div className="flex items-center gap-2 sm:gap-3 truncate mr-2">
-              <div className="w-6 h-6 rounded-md bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0">
+              <div className="w-6 h-6 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/25 flex items-center justify-center shrink-0">
                 <Bot className="w-3.5 h-3.5" />
               </div>
               <div className="flex items-center gap-1.5 sm:gap-2 truncate">
-                <span className="font-semibold text-xs sm:text-sm text-white truncate">
+                <span className="font-semibold text-xs sm:text-sm text-neutral-100 truncate">
                   {activeAgent ? activeAgent.name : 'No Scraped Model Selected'}
                 </span>
                 {activeAgent && (
@@ -607,6 +819,12 @@ export default function App() {
                     </span>
                   </>
                 )}
+                {activePersonality && (
+                  <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-950/40 text-indigo-300 border border-indigo-500/25 text-[10px] font-mono">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    {activePersonality.name}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -615,7 +833,7 @@ export default function App() {
                 <>
                   <button
                     onClick={() => setIsCatalogModalOpen(true)}
-                    className="px-2 sm:px-2.5 py-1 text-xs text-neutral-300 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors flex items-center gap-1 min-h-[34px]"
+                    className="px-2 sm:px-2.5 py-1 text-xs text-neutral-300 hover:text-white rounded-lg hover:bg-white/5 transition-colors flex items-center gap-1 min-h-[34px] cursor-pointer"
                     title="Switch scraped model"
                     aria-label="Switch agent"
                   >
@@ -623,10 +841,22 @@ export default function App() {
                     <span className="hidden sm:inline">Models ({models.length})</span>
                   </button>
 
+                  <button
+                    onClick={() => setIsPersonalityModalOpen(true)}
+                    className="px-2 sm:px-2.5 py-1 text-xs text-neutral-300 hover:text-white rounded-lg hover:bg-white/5 transition-colors flex items-center gap-1 min-h-[34px] cursor-pointer"
+                    title="Customize AI character & instructions"
+                    aria-label="Customize AI character persona"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="hidden sm:inline">
+                      {activePersonality ? activePersonality.name : 'Persona'}
+                    </span>
+                  </button>
+
                   {activeAgent && (
                     <button
                       onClick={() => setIsConfigModalOpen(true)}
-                      className="px-2 sm:px-2.5 py-1 text-xs text-neutral-300 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors flex items-center gap-1 min-h-[34px]"
+                      className="px-2 sm:px-2.5 py-1 text-xs text-neutral-300 hover:text-white rounded-lg hover:bg-white/5 transition-colors flex items-center gap-1 min-h-[34px] cursor-pointer"
                       title="Customize persona"
                       aria-label="Configure agent parameters"
                     >
@@ -660,12 +890,33 @@ export default function App() {
                 </div>
 
                 <h1 className="text-xl sm:text-2xl font-bold text-white mb-2 font-display">
-                  Scrape Models from AgentRouter
+                  Scrape Agents from AgentRouter Docs
                 </h1>
 
-                <p className="text-xs sm:text-sm text-neutral-400 max-w-md mx-auto mb-6 leading-relaxed">
-                  Per the <a href="https://agentrouter.org/docs/index.html" target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300 underline font-medium">AgentRouter API Documentation</a>, models are scraped live from the gateway at <code className="bg-neutral-800 px-1 py-0.5 rounded text-indigo-300">https://co.agentrouter.org/v1</code>. Enter your API key to scrape your live agent catalog.
+                <p className="text-xs sm:text-sm text-neutral-400 max-w-md mx-auto mb-4 leading-relaxed">
+                  Scrape AI coding agents and comparative models live from the official documentation:
                 </p>
+
+                <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
+                  <a
+                    href="https://agentrouter.org/docs/claude-code.html"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-950/40 border border-orange-800/60 text-xs text-orange-300 hover:text-orange-200 hover:bg-orange-950/60 transition-colors"
+                  >
+                    <span>Claude Code Agent Docs</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                  <a
+                    href="https://agentrouter.org/docs/codex.html"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-xs text-emerald-300 hover:text-emerald-200 hover:bg-emerald-950/60 transition-colors"
+                  >
+                    <span>Codex & Comparative Models</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
 
                 {scrapeError && (
                   <div className="mb-5 p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-xs text-rose-300 flex items-start gap-2.5 text-left">
@@ -681,20 +932,28 @@ export default function App() {
                   </div>
                 )}
 
+                <div className="mb-6">
+                  <button
+                    type="button"
+                    onClick={handleScrapeDocs}
+                    disabled={isScraping}
+                    className="w-full py-3 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-semibold flex items-center justify-center gap-2.5 transition-all shadow-lg hover:shadow-indigo-500/25 cursor-pointer min-h-[48px]"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isScraping ? 'animate-spin' : ''}`} />
+                    <span>Scrape All Agents & Models from Live Docs</span>
+                  </button>
+                  <p className="text-[11px] text-neutral-400 mt-2">
+                    Scrapes Claude Code CLI, Codex, Cline, Roo Code, Trae, OpenCode & comparative models directly from the live site.
+                  </p>
+                </div>
+
                 <form onSubmit={handleInitialSetupScrape} className="bg-neutral-900/90 border border-neutral-800 p-5 rounded-2xl text-left space-y-4 shadow-xl">
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider">
                         Gateway Base URL
                       </label>
-                      <a
-                        href="https://agentrouter.org/docs/index.html"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-indigo-400 hover:text-indigo-300 underline"
-                      >
-                        API Docs ↗
-                      </a>
+                      <span className="text-[11px] text-neutral-500">Official Gateway</span>
                     </div>
                     <input
                       type="text"
@@ -703,29 +962,12 @@ export default function App() {
                       placeholder="https://co.agentrouter.org/v1"
                       className="w-full bg-neutral-800 text-neutral-100 text-xs rounded-xl px-3.5 py-2.5 border border-neutral-700 font-mono focus:outline-hidden focus:border-indigo-500"
                     />
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <span className="text-[11px] text-neutral-500">Presets:</span>
-                      <button
-                        type="button"
-                        onClick={() => setSetupUrlInput('https://co.agentrouter.org/v1')}
-                        className="px-2 py-0.5 rounded text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700"
-                      >
-                        agentrouter.org (co)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSetupUrlInput('https://openrouter.ai/api/v1')}
-                        className="px-2 py-0.5 rounded text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700"
-                      >
-                        openrouter.ai
-                      </button>
-                    </div>
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="block text-xs font-semibold text-neutral-300 uppercase tracking-wider">
-                        Your API Key
+                        AgentRouter API Key
                       </label>
                       <a
                         href="https://co.agentrouter.org"
@@ -741,7 +983,7 @@ export default function App() {
                         type={showSetupKey ? 'text' : 'password'}
                         value={setupKeyInput}
                         onChange={e => setSetupKeyInput(e.target.value)}
-                        placeholder="Enter API key (e.g. sk-...)"
+                        placeholder="Enter API key to chat with scraped agents"
                         className="w-full bg-neutral-800 text-neutral-100 text-xs rounded-xl pl-3.5 pr-10 py-2.5 border border-neutral-700 font-mono focus:outline-hidden focus:border-indigo-500"
                       />
                       <button
@@ -753,31 +995,19 @@ export default function App() {
                         {showSetupKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                    <p className="text-[11px] text-neutral-500 mt-1.5">
-                      Requires valid AgentRouter key (or use OpenRouter preset for public catalog).
+                    <p className="text-[11px] text-neutral-400 mt-1.5">
+                      Used for chat completions with Claude Code, Codex, and other scraped agents.
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleScrapeDocs}
-                      disabled={isScraping}
-                      className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer min-h-[44px]"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isScraping ? 'animate-spin' : ''}`} />
-                      <span>Scrape AgentRouter Docs</span>
-                    </button>
-
-                    <button
-                      type="submit"
-                      disabled={isScraping}
-                      className="w-full py-2.5 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 disabled:opacity-50 text-neutral-200 hover:text-white text-xs font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer min-h-[44px]"
-                    >
-                      <Layers className="w-3.5 h-3.5 text-purple-400" />
-                      <span>Scrape from API Gateway</span>
-                    </button>
-                  </div>
+                  <button
+                    type="submit"
+                    disabled={isScraping}
+                    className="w-full py-2.5 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 disabled:opacity-50 text-neutral-200 hover:text-white text-xs font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer min-h-[44px]"
+                  >
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Save Key & Scrape Agents</span>
+                  </button>
                 </form>
 
                 {/* Direct Model ID Add Card */}
@@ -785,14 +1015,14 @@ export default function App() {
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
                       <Plus className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Or Add Model by ID Directly</span>
+                      <span>Or Add Model / Agent by ID Directly</span>
                     </span>
                     <span className="text-[10px] text-indigo-400 font-medium px-2 py-0.5 rounded-full bg-indigo-950/60 border border-indigo-900/50">
-                      Instant Chat
+                      Instant
                     </span>
                   </div>
                   <p className="text-[11px] text-neutral-400 mb-3 leading-relaxed">
-                    Have an AgentRouter model ID from the <a href="https://agentrouter.org/docs/index.html" target="_blank" rel="noreferrer" className="text-indigo-400 underline font-medium">docs</a>? Add it directly to chat immediately.
+                    Have an AgentRouter model ID from the documentation? Add it directly to chat:
                   </p>
 
                   <div className="flex gap-2 mb-2.5">
@@ -800,7 +1030,7 @@ export default function App() {
                       type="text"
                       value={directModelInput}
                       onChange={e => setDirectModelInput(e.target.value)}
-                      placeholder="e.g. agentrouter/claude-opus-4-8"
+                      placeholder="e.g. claude-opus-4-8 or gpt-5.5"
                       className="flex-1 bg-neutral-800 text-neutral-100 text-xs rounded-xl px-3.5 py-2.5 border border-neutral-700 font-mono focus:outline-hidden focus:border-indigo-500"
                       onKeyDown={e => {
                         if (e.key === 'Enter') {
@@ -821,13 +1051,14 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] text-neutral-500">Popular:</span>
+                    <span className="text-[10px] text-neutral-500">Documented Models:</span>
                     {[
-                      'agentrouter/claude-opus-4-8',
-                      'agentrouter/gpt-5.5',
-                      'agentrouter/deepseek-v4-flash',
-                      'openai/gpt-4o',
-                      'anthropic/claude-3-7-sonnet'
+                      'claude-opus-4-8',
+                      'gpt-5.5',
+                      'kimi-k2.6',
+                      'glm-5.1',
+                      'step3p5-code-alpha',
+                      'step3p6-preview'
                     ].map(id => (
                       <button
                         key={id}
@@ -835,7 +1066,7 @@ export default function App() {
                         onClick={() => handleAddDirectModel(id)}
                         className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-indigo-300 border border-neutral-700 transition-colors"
                       >
-                        +{id.replace(/^agentrouter\//, '')}
+                        +{id}
                       </button>
                     ))}
                   </div>
@@ -888,21 +1119,27 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              /* Message List */
-              activeMessages.map(msg => (
-                <ChatMessageView
-                  key={msg.id}
-                  message={msg}
-                  agentName={activeAgent ? activeAgent.name : 'Scraped Agent'}
-                  provider={activeAgent ? activeAgent.provider : undefined}
-                  isStreaming={isStreaming && msg.id === activeMessages[activeMessages.length - 1]?.id}
-                />
-              ))
+              /* Continuous Document Canvas */
+              <div className="max-w-3xl mx-auto space-y-1 sm:space-y-2">
+                {activeMessages.map(msg => (
+                  <ChatMessageView
+                    key={msg.id}
+                    message={msg}
+                    agentName={activeAgent ? activeAgent.name : 'Scraped Agent'}
+                    provider={activeAgent ? activeAgent.provider : undefined}
+                    isStreaming={isStreaming && msg.id === activeMessages[activeMessages.length - 1]?.id}
+                    onEditMessage={handleEditMessage}
+                    onSwitchBranch={handleSwitchBranch}
+                    onActionChipClick={handleActionChipClick}
+                    onOpenCodeSlideWindow={handleOpenCodeSlide}
+                  />
+                ))}
+              </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Bottom Chat Input (Only active if models scraped) */}
+          {/* Floating Input Pill Area (Continuous Breathing Room) */}
           {models.length > 0 && activeAgent && (
             <ChatInput
               input={input}
@@ -913,13 +1150,19 @@ export default function App() {
               activeModelName={activeAgent.name}
               provider={activeAgent.provider}
               onOpenConfig={() => setIsConfigModalOpen(true)}
+              onOpenPersonality={() => setIsPersonalityModalOpen(true)}
+              activePersonality={activePersonality}
+              hasCustomInstructions={Boolean(customInstructions.trim())}
+              attachedFiles={attachedFiles}
+              onAddFiles={handleAddFiles}
+              onRemoveFile={handleRemoveFile}
             />
           )}
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation Tab Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 grid grid-cols-4 items-center h-14 pb-safe select-none">
+      {/* Mobile Bottom Navigation Tab Bar with Frosted Glass */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#12151e]/90 backdrop-blur-xl border-t border-white/5 grid grid-cols-4 items-center h-14 pb-safe select-none">
         <button
           onClick={() => setIsMobileDrawerOpen(true)}
           className="flex flex-col items-center justify-center h-full text-neutral-400 hover:text-white transition-colors min-h-[44px]"
@@ -940,13 +1183,12 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => setIsConfigModalOpen(true)}
-          disabled={!activeAgent}
-          className="flex flex-col items-center justify-center h-full text-neutral-400 hover:text-white disabled:opacity-30 transition-colors min-h-[44px]"
-          aria-label="Configure agent parameters"
+          onClick={() => setIsPersonalityModalOpen(true)}
+          className="flex flex-col items-center justify-center h-full text-neutral-400 hover:text-white transition-colors min-h-[44px]"
+          aria-label="Customize AI character persona"
         >
-          <Sliders className="w-4 h-4" />
-          <span className="text-[10px] font-medium tracking-tight mt-1">Params</span>
+          <Sparkles className="w-4 h-4 text-indigo-400" />
+          <span className="text-[10px] font-medium tracking-tight mt-1">Persona</span>
         </button>
 
         <button
@@ -954,12 +1196,21 @@ export default function App() {
           className="flex flex-col items-center justify-center h-full text-neutral-400 hover:text-white transition-colors min-h-[44px]"
           aria-label="Open API settings"
         >
-          <Key className="w-4 h-4 text-indigo-400" />
+          <Shield className="w-4 h-4 text-emerald-400" />
           <span className="text-[10px] font-medium tracking-tight mt-1">API Key</span>
         </button>
       </nav>
 
       {/* Modals */}
+      <CustomPersonalityModal
+        isOpen={isPersonalityModalOpen}
+        onClose={() => setIsPersonalityModalOpen(false)}
+        activePersonalityId={customPersonalityId}
+        customInstructions={customInstructions}
+        onSavePersonality={handleSavePersonality}
+        onClearPersonality={handleClearPersonality}
+      />
+
       <ModelCatalogModal
         isOpen={isCatalogModalOpen}
         onClose={() => setIsCatalogModalOpen(false)}
@@ -1000,6 +1251,15 @@ export default function App() {
         baseUrl={baseUrl}
         onSave={handleSaveApiKey}
         isScraping={isScraping}
+      />
+
+      {/* Slide-over Code Inspector Window */}
+      <CodeSlideWindow
+        isOpen={codeSlideData.isOpen}
+        onClose={handleCloseCodeSlide}
+        fileName={codeSlideData.fileName}
+        code={codeSlideData.code}
+        language={codeSlideData.language}
       />
     </div>
   );

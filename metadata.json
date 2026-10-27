@@ -1,6 +1,6 @@
 {
-  "name": "AgentRouter AI - Custom Agent Chat Studio",
-  "description": "Connect your AgentRouter or OpenAI-compatible API key to scrape models and chat with specialized AI agents in a sleek, customizable studio.",
+  "name": "BranchLabs - Custom Agent Chat Studio",
+  "description": "BranchLabs - Multi-model AI studio with live documentation scraping, conversation branching, custom AI character personas, and real-time streaming.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

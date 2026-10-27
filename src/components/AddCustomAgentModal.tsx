@@ -59,9 +59,11 @@ export const AddCustomAgentModal: React.FC<AddCustomAgentModalProps> = ({
 
     const newAgent: AgentModel = {
       id: modelId.trim(),
+      actualModelId: modelId.trim(),
       name: finalName,
       provider,
       category,
+      protocol: provider === 'Anthropic' ? 'anthropic' : 'openai',
       contextWindow: Number(contextWindow) || 128000,
       description: description.trim() || `Custom configured agent using ${modelId.trim()}.`,
       badge: 'Custom Agent',

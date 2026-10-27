@@ -11,4 +11,7 @@ export interface AgentModel {
   maxTokens?: number;
   temperature?: number;
   isCustom?: boolean;
+  actualModelId?: string;
+  protocol?: 'anthropic' | 'openai';
+  docsSection?: string;
 }

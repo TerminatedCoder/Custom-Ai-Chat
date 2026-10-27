@@ -4,7 +4,9 @@ import {
   buildChatPayload,
   extractReasoningThought,
   parseSSEBuffer,
-  generateDemoResponse
+  generateDemoResponse,
+  branchUserMessage,
+  switchMessageBranch
 } from './chatManager';
 import { AgentModel } from './modelCatalog';
 
@@ -74,4 +76,76 @@ test('generateDemoResponse creates context-rich agent response', () => {
   const response = generateDemoResponse(agent, 'Design a microservice architecture');
   assert.ok(response.includes('Architectural Blueprint'));
   assert.ok(response.includes(agent.name));
+});
+
+test('branchUserMessage and switchMessageBranch fork and restore conversation paths', () => {
+  const initialMessages = [
+    { id: 'msg-1', role: 'user' as const, content: 'First prompt', timestamp: 1000 },
+    { id: 'msg-2', role: 'assistant' as const, content: 'First answer', timestamp: 1001 },
+    { id: 'msg-3', role: 'user' as const, content: 'Second prompt', timestamp: 1002 },
+    { id: 'msg-4', role: 'assistant' as const, content: 'Second answer', timestamp: 1003 }
+  ];
+
+  // Fork at msg-3 with new content
+  const { updatedMessages } = branchUserMessage(
+    initialMessages,
+    'msg-3',
+    'Second prompt edited alternative'
+  );
+
+  assert.equal(updatedMessages.length, 3);
+  assert.equal(updatedMessages[2].content, 'Second prompt edited alternative');
+  assert.equal(updatedMessages[2].branches?.length, 2);
+  assert.equal(updatedMessages[2].currentBranchIndex, 1);
+  // Original branch 0 should contain msg-4 in subsequentMessages
+  assert.equal(updatedMessages[2].branches?.[0].content, 'Second prompt');
+  assert.equal(updatedMessages[2].branches?.[0].subsequentMessages.length, 1);
+  assert.equal(updatedMessages[2].branches?.[0].subsequentMessages[0].id, 'msg-4');
+
+  // Switch back to branch 0
+  const switchedBack = switchMessageBranch(
+    updatedMessages,
+    'msg-3',
+    0
+  );
+
+  assert.equal(switchedBack.length, 4);
+  assert.equal(switchedBack[2].content, 'Second prompt');
+  assert.equal(switchedBack[2].currentBranchIndex, 0);
+  assert.equal(switchedBack[3].content, 'Second answer');
+
+  // Switch back to branch 1
+  const switchedToBranch1 = switchMessageBranch(
+    switchedBack,
+    'msg-3',
+    1
+  );
+
+  assert.equal(switchedToBranch1.length, 3);
+  assert.equal(switchedToBranch1[2].content, 'Second prompt edited alternative');
+  assert.equal(switchedToBranch1[2].currentBranchIndex, 1);
+});
+
+test('ChatMessage supports file attachments and metadata', () => {
+  const msg: import('./chatManager').ChatMessage = {
+    id: 'msg-files',
+    role: 'user',
+    content: 'Inspect the attached file',
+    timestamp: Date.now(),
+    attachments: [
+      {
+        id: 'file-1',
+        name: 'orchestrator.ts',
+        size: 1024,
+        type: 'text/typescript',
+        content: 'export class Orchestrator {}',
+        isImage: false
+      }
+    ]
+  };
+
+  assert.equal(msg.attachments?.length, 1);
+  assert.equal(msg.attachments?.[0].name, 'orchestrator.ts');
+  assert.equal(msg.attachments?.[0].size, 1024);
+  assert.equal(msg.attachments?.[0].isImage, false);
 });

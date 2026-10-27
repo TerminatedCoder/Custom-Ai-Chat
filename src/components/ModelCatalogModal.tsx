@@ -33,26 +33,24 @@ export const ModelCatalogModal: React.FC<ModelCatalogModalProps> = ({
   scrapeStatusMessage
 }) => {
   const [search, setSearch] = useState('');
-  const [selectedProvider, setSelectedProvider] = useState<string>('All');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [newModelInput, setNewModelInput] = useState('');
 
-  const providers = ['All', 'Anthropic', 'OpenAI', 'DeepSeek', 'Google', 'Meta', 'Mistral', 'Qwen'];
-  const categories = ['All', 'Reasoning', 'Coding', 'General', 'Fast', 'Vision'];
-
   const filteredModels = useMemo(() => {
-    return filterModels(models, {
-      search,
-      provider: selectedProvider,
-      category: selectedCategory
-    });
-  }, [models, search, selectedProvider, selectedCategory]);
+    const q = search.trim().toLowerCase();
+    if (!q) return models;
+    return models.filter(m =>
+      m.name.toLowerCase().includes(q) ||
+      m.id.toLowerCase().includes(q) ||
+      m.description.toLowerCase().includes(q) ||
+      (m.badge && m.badge.toLowerCase().includes(q))
+    );
+  }, [models, search]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-xs">
-      <div className="bg-neutral-900 border-t sm:border border-neutral-800 rounded-t-3xl sm:rounded-2xl w-full max-w-4xl max-h-[92vh] sm:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-md">
+      <div className="bg-[#141822]/95 border-t sm:border border-white/10 rounded-t-3xl sm:rounded-2xl w-full max-w-4xl max-h-[92vh] sm:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden backdrop-blur-xl">
         {/* Mobile Drag Indicator */}
         <div className="sm:hidden w-10 h-1 bg-neutral-700 rounded-full mx-auto mt-2.5 mb-1 shrink-0" />
 
@@ -179,59 +177,17 @@ export const ModelCatalogModal: React.FC<ModelCatalogModalProps> = ({
           </div>
         )}
 
-        {/* Filter & Search Bar */}
-        <div className="px-4 sm:px-6 py-3 border-b border-neutral-800/80 bg-neutral-900/50 space-y-2.5 shrink-0">
+        {/* Search Bar without Cluttering Filter Tabs */}
+        <div className="px-4 sm:px-6 py-3 border-b border-white/5 bg-white/[0.02] shrink-0">
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search models..."
-              className="w-full bg-neutral-800/90 text-neutral-100 placeholder-neutral-500 text-base sm:text-xs rounded-xl pl-9 pr-4 py-2 border border-neutral-700/60 focus:outline-hidden focus:border-indigo-500 transition-colors"
+              placeholder="Search by agent name, model ID, or description..."
+              className="w-full bg-[#181c26] text-neutral-100 placeholder-neutral-500 text-sm sm:text-xs rounded-xl pl-9 pr-4 py-2.5 border border-white/10 focus:outline-hidden focus:border-indigo-500 transition-colors font-sans"
             />
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-            {/* Provider Filter Tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full">
-              <span className="text-neutral-500 mr-1 text-[11px] uppercase tracking-wider font-semibold shrink-0">
-                Provider:
-              </span>
-              {providers.map(prov => (
-                <button
-                  key={prov}
-                  onClick={() => setSelectedProvider(prov)}
-                  className={`px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap text-xs min-h-[30px] ${
-                    selectedProvider === prov
-                      ? 'bg-neutral-800 text-white font-medium border border-neutral-700'
-                      : 'text-neutral-400 hover:text-neutral-200'
-                  }`}
-                >
-                  {prov}
-                </button>
-              ))}
-            </div>
-
-            {/* Category Filter Tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-1">
-              <span className="text-neutral-500 mr-1 text-[11px] uppercase tracking-wider font-semibold shrink-0">
-                Role:
-              </span>
-              {categories.map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap text-xs min-h-[30px] ${
-                    selectedCategory === cat
-                      ? 'bg-indigo-600/30 text-indigo-300 font-medium border border-indigo-500/40'
-                      : 'text-neutral-400 hover:text-neutral-200'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
 
