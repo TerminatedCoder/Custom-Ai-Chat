@@ -1,7 +1,7 @@
 import React from 'react';
 import { AgentModel } from '../utils/modelCatalog';
 import { ChatSession } from '../utils/chatManager';
-import { Layers, MessageSquare, Trash2, Sliders, Shield, RefreshCw, X, Key, Sparkles } from 'lucide-react';
+import { Layers, MessageSquare, Trash2, Sliders, Shield, RefreshCw, X, Key, Sparkles, History } from 'lucide-react';
 
 interface AgentDeckProps {
   agents: AgentModel[];
@@ -16,6 +16,7 @@ interface AgentDeckProps {
   onOpenApiKey: () => void;
   onOpenAddCustom?: () => void;
   onOpenPersonality?: () => void;
+  onOpenHistory?: () => void;
   apiKey: string;
   onScrapeModels: () => void;
   onScrapeDocs?: () => void;
@@ -38,6 +39,7 @@ export const AgentDeck: React.FC<AgentDeckProps> = ({
   onOpenApiKey,
   onOpenAddCustom,
   onOpenPersonality,
+  onOpenHistory,
   apiKey,
   onScrapeModels,
   onScrapeDocs,
@@ -215,9 +217,26 @@ export const AgentDeck: React.FC<AgentDeckProps> = ({
           <span className="text-xs font-semibold text-neutral-400 tracking-wide uppercase">
             Sessions
           </span>
-          <span className="text-xs text-neutral-500 tabular-nums">
-            {sessions.length}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-neutral-500 tabular-nums">
+              {sessions.length}
+            </span>
+            {onOpenHistory && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenHistory();
+                  if (onCloseMobile) onCloseMobile();
+                }}
+                className="text-xs text-indigo-400 hover:text-indigo-300 p-1 rounded-md hover:bg-neutral-800 transition-colors flex items-center gap-1"
+                title="Open full chat history and search"
+                aria-label="Open chat history modal"
+              >
+                <History className="w-3.5 h-3.5" />
+                <span className="text-[10px] hidden sm:inline">History</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {sessions.length === 0 ? (

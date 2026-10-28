@@ -1,5 +1,5 @@
 import React from 'react';
-import { Key, Globe, Plus, ShieldCheck, Layers, Menu, Sparkles } from 'lucide-react';
+import { Key, Globe, Plus, ShieldCheck, Layers, Menu, Sparkles, History } from 'lucide-react';
 import { AgentModel } from '../utils/modelCatalog';
 
 interface HeaderProps {
@@ -12,6 +12,8 @@ interface HeaderProps {
   onScrapeDocs?: () => void;
   onOpenAddCustom?: () => void;
   onOpenPersonality?: () => void;
+  onOpenHistory?: () => void;
+  historyCount?: number;
   scrapedCount: number;
 }
 
@@ -25,6 +27,8 @@ export const Header: React.FC<HeaderProps> = ({
   onScrapeDocs,
   onOpenAddCustom,
   onOpenPersonality,
+  onOpenHistory,
+  historyCount = 0,
   scrapedCount
 }) => {
   return (
@@ -110,6 +114,23 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Zone 3: Primary Actions */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
+        {onOpenHistory && (
+          <button
+            onClick={onOpenHistory}
+            className="px-2.5 md:px-3 py-1.5 text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800/80 hover:bg-neutral-700/80 rounded-lg border border-neutral-700/80 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] cursor-pointer"
+            aria-label="Open chat history"
+            title="View chat history and previous conversations"
+          >
+            <History className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">History</span>
+            {typeof historyCount === 'number' && historyCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-500/30 text-[10px] font-mono">
+                {historyCount}
+              </span>
+            )}
+          </button>
+        )}
+
         <button
           onClick={onOpenApiKeyModal}
           className={`px-2.5 md:px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] ${

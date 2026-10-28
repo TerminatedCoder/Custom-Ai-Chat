@@ -17,6 +17,7 @@ import {
   AttachedFile
 } from './utils/chatManager';
 import { getFileExtension, formatBytes } from './utils/codeUtils';
+import { fetchLiveModels, fetchLiveDocs, streamChatCompletions } from './utils/apiGateway';
 import { Header } from './components/Header';
 import { AgentDeck } from './components/AgentDeck';
 import { ChatMessageView } from './components/ChatMessageView';
@@ -27,6 +28,7 @@ import { ApiKeyModal } from './components/ApiKeyModal';
 import { AddCustomAgentModal } from './components/AddCustomAgentModal';
 import { CustomPersonalityModal } from './components/CustomPersonalityModal';
 import { CodeSlideWindow } from './components/CodeSlideWindow';
+import { ChatHistoryModal } from './components/ChatHistoryModal';
 import {
   Bot,
   Sparkles,
@@ -41,8 +43,8 @@ import {
   EyeOff,
   Plus,
   ExternalLink,
-  ArrowRight,
-  Check
+  Check,
+  History
 } from 'lucide-react';
 
 export default function App() {
@@ -109,6 +111,10 @@ export default function App() {
   });
 
   const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    const saved = localStorage.getItem('ar_active_session_id');
+    if (saved && sessions.some(s => s.id === saved)) {
+      return saved;
+    }
     return sessions[0]?.id || 'default_session';
   });
 
@@ -123,6 +129,7 @@ export default function App() {
 
   // Modals state
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [isAddCustomModalOpen, setIsAddCustomModalOpen] = useState(false);
@@ -190,6 +197,13 @@ export default function App() {
     localStorage.setItem('ar_chat_sessions', JSON.stringify(sessions));
   }, [sessions]);
 
+  // Persist active session ID
+  useEffect(() => {
+    if (activeSessionId) {
+      localStorage.setItem('ar_active_session_id', activeSessionId);
+    }
+  }, [activeSessionId]);
+
   // Persist scraped models strictly
   useEffect(() => {
     if (models.length > 0) {
@@ -254,13 +268,12 @@ export default function App() {
   const handleScrapeDocs = async () => {
     setIsScraping(true);
     setScrapeError('');
-    setScrapeStatusMessage('Scraping live models from https://co.agentrouter.org/portal/models...');
+    setScrapeStatusMessage('Scraping live models from AgentRouter documentation...');
 
     try {
-      const res = await fetch('/api/router/scrape-docs');
-      const data = await res.json();
+      const data = await fetchLiveDocs();
 
-      if (data.success && Array.isArray(data.models) && data.models.length > 0) {
+      if (data.success && data.models.length > 0) {
         setModels(data.models);
         if (!activeAgent || !data.models.some((m: AgentModel) => m.id === activeAgent.id)) {
           setActiveAgent(data.models[0]);
@@ -279,27 +292,17 @@ export default function App() {
   };
 
   /**
-   * Scrape models from API endpoint or documentation
+   * Scrape models from API endpoint or documentation (with Netlify static fallback)
    */
   const handleScrapeModels = async (keyToUse: string = apiKey, urlToUse: string = baseUrl) => {
-    const trimmedKey = keyToUse.trim();
     setIsScraping(true);
     setScrapeError('');
     setScrapeStatusMessage(`Scraping models from ${urlToUse}...`);
 
     try {
-      const res = await fetch('/api/router/models', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: trimmedKey,
-          baseUrl: urlToUse.trim()
-        })
-      });
+      const data = await fetchLiveModels(keyToUse, urlToUse);
 
-      const data = await res.json();
-
-      if (data.success && Array.isArray(data.models) && data.models.length > 0) {
+      if (data.success && data.models.length > 0) {
         setModels(data.models);
         if (!activeAgent || !data.models.some((m: AgentModel) => m.id === activeAgent.id)) {
           setActiveAgent(data.models[0]);
@@ -322,7 +325,7 @@ export default function App() {
         setScrapeStatusMessage('');
       }
     } catch (err: any) {
-      setScrapeError(`Network error reaching gateway: ${err?.message || 'Check connection'}`);
+      setScrapeError(`Connection error reaching gateway: ${err?.message || 'Check connection'}`);
       setScrapeStatusMessage('');
     } finally {
       setIsScraping(false);
@@ -444,6 +447,46 @@ export default function App() {
   };
 
   /**
+   * Rename a chat session
+   */
+  const handleRenameSession = (id: string, newTitle: string) => {
+    setSessions(prev =>
+      prev.map(s => (s.id === id ? { ...s, title: newTitle, updatedAt: Date.now() } : s))
+    );
+  };
+
+  /**
+   * Clear all chat history sessions
+   */
+  const handleClearAllSessions = () => {
+    const freshSession: ChatSession = {
+      id: 'session_' + Date.now(),
+      title: 'New Conversation',
+      agentId: activeAgent ? activeAgent.id : '',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: []
+    };
+    setSessions([freshSession]);
+    setActiveSessionId(freshSession.id);
+  };
+
+  /**
+   * Import chat sessions from backup JSON
+   */
+  const handleImportSessions = (imported: ChatSession[]) => {
+    if (!Array.isArray(imported) || imported.length === 0) return;
+    setSessions(prev => {
+      const existingIds = new Set(prev.map(p => p.id));
+      const newSessions = imported.filter(i => !existingIds.has(i.id));
+      return [...newSessions, ...prev];
+    });
+    if (imported[0]?.id) {
+      setActiveSessionId(imported[0].id);
+    }
+  };
+
+  /**
    * Clear current conversation
    */
   const handleClearCurrentChat = () => {
@@ -489,13 +532,17 @@ export default function App() {
    * Reusable streaming response runner for new chats and branching forks
    */
   const executeStreamResponse = async (contextMessages: ChatMessage[], assistantMessageId: string) => {
-    if (!activeAgent) return;
+    let agentToUse = activeAgent;
+    if (!agentToUse) {
+      agentToUse = models[0] || (activeSession?.agentId ? createManualAgentModel(activeSession.agentId) : createManualAgentModel('claude-opus-4-8'));
+      setActiveAgent(agentToUse);
+    }
 
     setIsStreaming(true);
     abortControllerRef.current = new AbortController();
 
     // Construct enriched system prompt incorporating agent persona + custom character instructions
-    let enrichedSystemPrompt = activeAgent.systemPrompt;
+    let enrichedSystemPrompt = agentToUse.systemPrompt;
     if (activePersonality) {
       enrichedSystemPrompt += `\n\n[Active Personality Role: ${activePersonality.name}]\n${activePersonality.instructions}`;
     }
@@ -503,69 +550,58 @@ export default function App() {
       enrichedSystemPrompt += `\n\n[Custom User Instructions]:\n${customInstructions.trim()}`;
     }
 
+    let accumulatedContent = '';
+    let accumulatedThought = '';
+
     try {
-      const response = await fetch('/api/router/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey,
-          baseUrl,
-          model: activeAgent.actualModelId || activeAgent.id,
-          protocol: activeAgent.protocol,
-          messages: contextMessages,
-          systemPrompt: enrichedSystemPrompt,
-          temperature: activeAgent.temperature ?? 0.7,
-          maxTokens: activeAgent.maxTokens ?? 2048
-        }),
-        signal: abortControllerRef.current.signal
+      await streamChatCompletions({
+        apiKey,
+        baseUrl,
+        agent: agentToUse,
+        messages: contextMessages,
+        systemPrompt: enrichedSystemPrompt,
+        temperature: agentToUse.temperature ?? 0.7,
+        maxTokens: agentToUse.maxTokens ?? 2048,
+        signal: abortControllerRef.current.signal,
+        onDelta: delta => {
+          accumulatedContent += delta;
+          setSessions(prev =>
+            prev.map(s => {
+              if (s.id !== activeSession.id) return s;
+              const msgs = s.messages.map(m => {
+                if (m.id === assistantMessageId) {
+                  return {
+                    ...m,
+                    content: accumulatedContent,
+                    thought: accumulatedThought
+                  };
+                }
+                return m;
+              });
+              return { ...s, messages: msgs, updatedAt: Date.now() };
+            })
+          );
+        },
+        onThought: thought => {
+          accumulatedThought += thought;
+          setSessions(prev =>
+            prev.map(s => {
+              if (s.id !== activeSession.id) return s;
+              const msgs = s.messages.map(m => {
+                if (m.id === assistantMessageId) {
+                  return {
+                    ...m,
+                    content: accumulatedContent,
+                    thought: accumulatedThought
+                  };
+                }
+                return m;
+              });
+              return { ...s, messages: msgs, updatedAt: Date.now() };
+            })
+          );
+        }
       });
-
-      if (!response.body) {
-        throw new Error('No readable response body from server.');
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let streamBuffer = '';
-      let accumulatedContent = '';
-      let accumulatedThought = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const textChunk = decoder.decode(value, { stream: true });
-        streamBuffer += textChunk;
-
-        const { deltas, thoughts, remainingBuffer, isDone } = parseSSEBuffer(streamBuffer);
-        streamBuffer = remainingBuffer;
-
-        if (deltas.length > 0) {
-          accumulatedContent += deltas.join('');
-        }
-        if (thoughts.length > 0) {
-          accumulatedThought += thoughts.join('');
-        }
-
-        setSessions(prev =>
-          prev.map(s => {
-            if (s.id !== activeSession.id) return s;
-            const msgs = s.messages.map(m => {
-              if (m.id === assistantMessageId) {
-                return {
-                  ...m,
-                  content: accumulatedContent,
-                  thought: accumulatedThought
-                };
-              }
-              return m;
-            });
-            return { ...s, messages: msgs };
-          })
-        );
-
-        if (isDone) break;
-      }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         console.error('Chat generation error:', err);
@@ -578,7 +614,7 @@ export default function App() {
                   ...m,
                   content:
                     m.content ||
-                    `**Gateway Error**: Unable to reach ${baseUrl} with scraped model \`${activeAgent.id}\`. Please verify your API key.`
+                    `**Gateway Error**: Unable to reach ${baseUrl} with scraped model \`${agentToUse.id}\`. Please verify your API key.`
                 };
               }
               return m;
@@ -598,7 +634,16 @@ export default function App() {
    */
   const handleSendMessage = async (textToSend: string = input) => {
     const trimmed = textToSend.trim();
-    if ((!trimmed && attachedFiles.length === 0) || isStreaming || !activeAgent) return;
+    if ((!trimmed && attachedFiles.length === 0) || isStreaming) return;
+
+    let agentToUse = activeAgent;
+    if (!agentToUse) {
+      agentToUse = models[0] || (activeSession?.agentId ? createManualAgentModel(activeSession.agentId) : createManualAgentModel('claude-opus-4-8'));
+      setActiveAgent(agentToUse);
+      if (!models.some(m => m.id === agentToUse!.id)) {
+        setModels(prev => [agentToUse!, ...prev]);
+      }
+    }
 
     const currentAttachments = [...attachedFiles];
     setInput('');
@@ -648,8 +693,8 @@ export default function App() {
       content: '',
       thought: '',
       timestamp: Date.now() + 1,
-      modelId: activeAgent.id,
-      provider: activeAgent.provider
+      modelId: agentToUse.id,
+      provider: agentToUse.provider
     };
 
     const updatedTitle =
@@ -771,6 +816,8 @@ export default function App() {
         onScrapeDocs={handleScrapeDocs}
         onOpenAddCustom={() => setIsAddCustomModalOpen(true)}
         onOpenPersonality={() => setIsPersonalityModalOpen(true)}
+        onOpenHistory={() => setIsHistoryModalOpen(true)}
+        historyCount={sessions.length}
         scrapedCount={models.length}
       />
 
@@ -790,6 +837,7 @@ export default function App() {
           onOpenApiKey={() => setIsApiKeyModalOpen(true)}
           onOpenAddCustom={() => setIsAddCustomModalOpen(true)}
           onOpenPersonality={() => setIsPersonalityModalOpen(true)}
+          onOpenHistory={() => setIsHistoryModalOpen(true)}
           apiKey={apiKey}
           onScrapeModels={() => handleScrapeModels(apiKey, baseUrl)}
           onScrapeDocs={handleScrapeDocs}
@@ -882,7 +930,7 @@ export default function App() {
 
           {/* Messages Scroll View OR Initial Scrape Setup Screen */}
           <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-6 space-y-2">
-            {models.length === 0 ? (
+            {models.length === 0 && activeMessages.length === 0 ? (
               /* EMPTY STATE: Only Scraped Models Allowed */
               <div className="max-w-xl mx-auto py-8 sm:py-12 px-4 text-center">
                 <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center mx-auto mb-4 shadow-sm">
@@ -896,6 +944,31 @@ export default function App() {
                 <p className="text-xs sm:text-sm text-neutral-400 max-w-md mx-auto mb-4 leading-relaxed">
                   Scrape AI coding agents and comparative models live from the official documentation:
                 </p>
+
+                {/* Previous Chat History Card if user has saved conversations */}
+                {sessions.some(s => s.messages.length > 0) && (
+                  <div className="mb-6 p-4 rounded-2xl bg-indigo-950/40 border border-indigo-800/60 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400 shrink-0">
+                        <History className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-white">Previous Chat History Available</div>
+                        <div className="text-[11px] text-neutral-400">
+                          {sessions.filter(s => s.messages.length > 0).length} conversation{sessions.filter(s => s.messages.length > 0).length === 1 ? '' : 's'} saved in your browser
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsHistoryModalOpen(true)}
+                      className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer shrink-0 min-h-[38px]"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      <span>Browse History</span>
+                    </button>
+                  </div>
+                )}
 
                 <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
                   <a
@@ -1140,15 +1213,15 @@ export default function App() {
           </div>
 
           {/* Floating Input Pill Area (Continuous Breathing Room) */}
-          {models.length > 0 && activeAgent && (
+          {(models.length > 0 || activeMessages.length > 0 || activeAgent) && (
             <ChatInput
               input={input}
               setInput={setInput}
               onSend={() => handleSendMessage()}
               isStreaming={isStreaming}
               onStop={handleStopGeneration}
-              activeModelName={activeAgent.name}
-              provider={activeAgent.provider}
+              activeModelName={activeAgent ? activeAgent.name : 'Documented Agent'}
+              provider={activeAgent?.provider || 'Anthropic'}
               onOpenConfig={() => setIsConfigModalOpen(true)}
               onOpenPersonality={() => setIsPersonalityModalOpen(true)}
               activePersonality={activePersonality}
@@ -1162,7 +1235,7 @@ export default function App() {
       </div>
 
       {/* Mobile Bottom Navigation Tab Bar with Frosted Glass */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#12151e]/90 backdrop-blur-xl border-t border-white/5 grid grid-cols-4 items-center h-14 pb-safe select-none">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#12151e]/90 backdrop-blur-xl border-t border-white/5 grid grid-cols-5 items-center h-14 pb-safe select-none">
         <button
           onClick={() => setIsMobileDrawerOpen(true)}
           className="flex flex-col items-center justify-center h-full text-neutral-400 hover:text-white transition-colors min-h-[44px]"
@@ -1170,6 +1243,15 @@ export default function App() {
         >
           <Layers className="w-4 h-4" />
           <span className="text-[10px] font-medium tracking-tight mt-1">Drawer</span>
+        </button>
+
+        <button
+          onClick={() => setIsHistoryModalOpen(true)}
+          className="flex flex-col items-center justify-center h-full text-neutral-400 hover:text-white transition-colors min-h-[44px]"
+          aria-label="Open mobile chat history"
+        >
+          <History className="w-4 h-4 text-indigo-400" />
+          <span className="text-[10px] font-medium tracking-tight mt-1">History</span>
         </button>
 
         <button
@@ -1251,6 +1333,23 @@ export default function App() {
         baseUrl={baseUrl}
         onSave={handleSaveApiKey}
         isScraping={isScraping}
+      />
+
+      <ChatHistoryModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={id => {
+          setActiveSessionId(id);
+          setIsHistoryModalOpen(false);
+          setIsMobileDrawerOpen(false);
+        }}
+        onDeleteSession={handleDeleteSession}
+        onRenameSession={handleRenameSession}
+        onClearAllSessions={handleClearAllSessions}
+        onNewSession={handleNewChat}
+        onImportSessions={handleImportSessions}
       />
 
       {/* Slide-over Code Inspector Window */}
