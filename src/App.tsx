@@ -29,6 +29,8 @@ import { AddCustomAgentModal } from './components/AddCustomAgentModal';
 import { CustomPersonalityModal } from './components/CustomPersonalityModal';
 import { CodeSlideWindow } from './components/CodeSlideWindow';
 import { ChatHistoryModal } from './components/ChatHistoryModal';
+import { MobileAppInstallModal } from './components/MobileAppInstallModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import {
   Bot,
   Sparkles,
@@ -44,7 +46,9 @@ import {
   Plus,
   ExternalLink,
   Check,
-  History
+  History,
+  Smartphone,
+  Download
 } from 'lucide-react';
 
 export default function App() {
@@ -131,9 +135,11 @@ export default function App() {
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [apiKeyModalTab, setApiKeyModalTab] = useState<'gateway' | 'apk'>('gateway');
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [isAddCustomModalOpen, setIsAddCustomModalOpen] = useState(false);
   const [isPersonalityModalOpen, setIsPersonalityModalOpen] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
   // Custom AI character & instructions state
   const [customPersonalityId, setCustomPersonalityId] = useState<string>(() => {
@@ -809,7 +815,14 @@ export default function App() {
       <Header
         activeAgent={activeAgent}
         apiKey={apiKey}
-        onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
+        onOpenApiKeyModal={() => {
+          setApiKeyModalTab('gateway');
+          setIsApiKeyModalOpen(true);
+        }}
+        onOpenApkSettings={() => {
+          setApiKeyModalTab('apk');
+          setIsApiKeyModalOpen(true);
+        }}
         onOpenCatalogModal={() => setIsCatalogModalOpen(true)}
         onNewChat={handleNewChat}
         onToggleMobileDrawer={() => setIsMobileDrawerOpen(!isMobileDrawerOpen)}
@@ -817,6 +830,7 @@ export default function App() {
         onOpenAddCustom={() => setIsAddCustomModalOpen(true)}
         onOpenPersonality={() => setIsPersonalityModalOpen(true)}
         onOpenHistory={() => setIsHistoryModalOpen(true)}
+        onOpenInstallModal={() => setIsInstallModalOpen(true)}
         historyCount={sessions.length}
         scrapedCount={models.length}
       />
@@ -834,10 +848,18 @@ export default function App() {
           onDeleteSession={handleDeleteSession}
           onOpenCatalog={() => setIsCatalogModalOpen(true)}
           onOpenConfig={() => setIsConfigModalOpen(true)}
-          onOpenApiKey={() => setIsApiKeyModalOpen(true)}
+          onOpenApiKey={() => {
+            setApiKeyModalTab('gateway');
+            setIsApiKeyModalOpen(true);
+          }}
+          onOpenApkSettings={() => {
+            setApiKeyModalTab('apk');
+            setIsApiKeyModalOpen(true);
+          }}
           onOpenAddCustom={() => setIsAddCustomModalOpen(true)}
           onOpenPersonality={() => setIsPersonalityModalOpen(true)}
           onOpenHistory={() => setIsHistoryModalOpen(true)}
+          onOpenInstallModal={() => setIsInstallModalOpen(true)}
           apiKey={apiKey}
           onScrapeModels={() => handleScrapeModels(apiKey, baseUrl)}
           onScrapeDocs={handleScrapeDocs}
@@ -947,7 +969,7 @@ export default function App() {
 
                 {/* Previous Chat History Card if user has saved conversations */}
                 {sessions.some(s => s.messages.length > 0) && (
-                  <div className="mb-6 p-4 rounded-2xl bg-indigo-950/40 border border-indigo-800/60 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+                  <div className="mb-4 p-4 rounded-2xl bg-indigo-950/40 border border-indigo-800/60 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
                     <div className="flex items-center gap-3">
                       <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400 shrink-0">
                         <History className="w-5 h-5" />
@@ -969,6 +991,47 @@ export default function App() {
                     </button>
                   </div>
                 )}
+
+                {/* Mobile App & APK Install Card */}
+                <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-indigo-950/30 to-purple-950/40 border border-emerald-800/40 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0">
+                      <Smartphone className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-white flex items-center gap-2">
+                        <span>BranchLabs Mobile App & APK</span>
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          PWA & .APK Ready
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-neutral-400">
+                        Install on Android (.apk), iOS, or Desktop for standalone full-screen coding
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setIsInstallModalOpen(true)}
+                      className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer min-h-[38px] shadow-sm"
+                    >
+                      <Smartphone className="w-3.5 h-3.5" />
+                      <span>Install App</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApiKeyModalTab('apk');
+                        setIsApiKeyModalOpen(true);
+                      }}
+                      className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white border border-neutral-700 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer min-h-[38px] shadow-sm"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>.APK Settings</span>
+                    </button>
+                  </div>
+                </div>
 
                 <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
                   <a
@@ -1265,12 +1328,12 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => setIsPersonalityModalOpen(true)}
+          onClick={() => setIsInstallModalOpen(true)}
           className="flex flex-col items-center justify-center h-full text-neutral-400 hover:text-white transition-colors min-h-[44px]"
-          aria-label="Customize AI character persona"
+          aria-label="Install BranchLabs mobile app"
         >
-          <Sparkles className="w-4 h-4 text-indigo-400" />
-          <span className="text-[10px] font-medium tracking-tight mt-1">Persona</span>
+          <Smartphone className="w-4 h-4 text-emerald-400" />
+          <span className="text-[10px] font-medium tracking-tight mt-1">Install</span>
         </button>
 
         <button
@@ -1333,6 +1396,7 @@ export default function App() {
         baseUrl={baseUrl}
         onSave={handleSaveApiKey}
         isScraping={isScraping}
+        initialTab={apiKeyModalTab}
       />
 
       <ChatHistoryModal
@@ -1360,6 +1424,20 @@ export default function App() {
         code={codeSlideData.code}
         language={codeSlideData.language}
       />
+
+      {/* Mobile App Install Walkthrough Modal */}
+      <MobileAppInstallModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+        onOpenApkSettings={() => {
+          setIsInstallModalOpen(false);
+          setApiKeyModalTab('apk');
+          setIsApiKeyModalOpen(true);
+        }}
+      />
+
+      {/* Network Connectivity Status Indicator */}
+      <OfflineIndicator />
     </div>
   );
 }

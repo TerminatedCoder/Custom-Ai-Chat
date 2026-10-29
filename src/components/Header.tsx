@@ -1,11 +1,13 @@
 import React from 'react';
-import { Key, Globe, Plus, ShieldCheck, Layers, Menu, Sparkles, History } from 'lucide-react';
+import { Key, Globe, Plus, ShieldCheck, Layers, Menu, Sparkles, History, Smartphone } from 'lucide-react';
 import { AgentModel } from '../utils/modelCatalog';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   activeAgent: AgentModel | null;
   apiKey: string;
   onOpenApiKeyModal: () => void;
+  onOpenApkSettings?: () => void;
   onOpenCatalogModal: () => void;
   onNewChat: () => void;
   onToggleMobileDrawer: () => void;
@@ -13,6 +15,7 @@ interface HeaderProps {
   onOpenAddCustom?: () => void;
   onOpenPersonality?: () => void;
   onOpenHistory?: () => void;
+  onOpenInstallModal?: () => void;
   historyCount?: number;
   scrapedCount: number;
 }
@@ -21,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeAgent,
   apiKey,
   onOpenApiKeyModal,
+  onOpenApkSettings,
   onOpenCatalogModal,
   onNewChat,
   onToggleMobileDrawer,
@@ -28,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAddCustom,
   onOpenPersonality,
   onOpenHistory,
+  onOpenInstallModal,
   historyCount = 0,
   scrapedCount
 }) => {
@@ -114,6 +119,10 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Zone 3: Primary Actions */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
+        {onOpenInstallModal && (
+          <PWAInstallButton onOpenModal={onOpenInstallModal} compact />
+        )}
+
         {onOpenHistory && (
           <button
             onClick={onOpenHistory}
@@ -133,24 +142,25 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           onClick={onOpenApiKeyModal}
-          className={`px-2.5 md:px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] ${
+          className={`px-2.5 md:px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 min-h-[38px] cursor-pointer ${
             apiKey
               ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60 hover:bg-emerald-900/40'
               : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:bg-neutral-700 text-white'
           }`}
-          aria-label="Manage API Key"
+          aria-label="Open Settings and API Key"
+          title="Settings, API Key, and Android APK (.apk)"
         >
           {apiKey ? (
             <>
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Key Connected</span>
-              <span className="sm:hidden text-[11px]">Key</span>
+              <span className="hidden sm:inline">Settings & Key</span>
+              <span className="sm:hidden text-[11px]">Settings</span>
             </>
           ) : (
             <>
               <Key className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="hidden sm:inline">Connect API Key</span>
-              <span className="sm:hidden text-[11px]">Key</span>
+              <span className="hidden sm:inline">Settings & Key</span>
+              <span className="sm:hidden text-[11px]">Settings</span>
             </>
           )}
         </button>

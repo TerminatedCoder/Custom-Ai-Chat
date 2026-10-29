@@ -1,0 +1,54 @@
+{
+  "id": "/",
+  "name": "BranchLabs - Custom Agent Chat Studio",
+  "short_name": "BranchLabs",
+  "description": "Multi-model AI studio with live docs scraping, code window, and conversation branching.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0d1117",
+  "background_color": "#0d1117",
+  "categories": [
+    "productivity",
+    "utilities",
+    "developer"
+  ],
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {
+      "name": "New Chat",
+      "short_name": "New",
+      "description": "Start a new AI agent conversation",
+      "url": "/",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

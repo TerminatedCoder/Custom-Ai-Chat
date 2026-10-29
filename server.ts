@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -422,13 +423,28 @@ app.post('/api/router/chat', async (req: Request, res: Response) => {
 });
 
 /**
+ * Serve Web App Manifests with explicit Content-Type and CORS for PWA validators & Netlify
+ */
+app.get(['/manifest.json', '/manifest.webmanifest'], (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.sendFile(path.join(__dirname, 'public', 'manifest.json'));
+});
+
+/**
  * Setup Vite in development or static in production
  */
 async function startServer() {
+  const httpServer = http.createServer(app);
+  const isHmrDisabled = process.env.DISABLE_HMR === 'true';
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: isHmrDisabled ? false : { server: httpServer }
+      },
       appType: 'spa'
     });
     app.use(vite.middlewares);
@@ -441,7 +457,7 @@ async function startServer() {
   }
 
   const portNumber = Number(PORT) || 3000;
-  app.listen(portNumber, '0.0.0.0', () => {
+  httpServer.listen(portNumber, '0.0.0.0', () => {
     console.log(`AgentRouter Studio Server running at http://0.0.0.0:${portNumber}`);
   });
 }

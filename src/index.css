@@ -1,13 +1,17 @@
 @import "tailwindcss";
 
 @layer base {
-  body {
+  html, body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    color: #0f172a;
+    color: #f1f5f9;
     background-color: #0b0f17;
     margin: 0;
     padding: 0;
     overflow-x: hidden;
+    /* Native Mobile App feel: suppress rubber-band pull and double-tap zoom delay */
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
 
   h1, h2, h3, h4, .font-display {
@@ -19,3 +23,13 @@
     font-feature-settings: "tnum" 1;
   }
 }
+
+/* Safe area padding utilities for mobile notches and bottom home indicator bars */
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+}
+
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+}
+

@@ -1,7 +1,8 @@
 import React from 'react';
 import { AgentModel } from '../utils/modelCatalog';
 import { ChatSession } from '../utils/chatManager';
-import { Layers, MessageSquare, Trash2, Sliders, Shield, RefreshCw, X, Key, Sparkles, History } from 'lucide-react';
+import { Layers, MessageSquare, Trash2, Sliders, Shield, RefreshCw, X, Key, Sparkles, History, Smartphone } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface AgentDeckProps {
   agents: AgentModel[];
@@ -14,9 +15,11 @@ interface AgentDeckProps {
   onOpenCatalog: () => void;
   onOpenConfig: () => void;
   onOpenApiKey: () => void;
+  onOpenApkSettings?: () => void;
   onOpenAddCustom?: () => void;
   onOpenPersonality?: () => void;
   onOpenHistory?: () => void;
+  onOpenInstallModal?: () => void;
   apiKey: string;
   onScrapeModels: () => void;
   onScrapeDocs?: () => void;
@@ -37,9 +40,11 @@ export const AgentDeck: React.FC<AgentDeckProps> = ({
   onOpenCatalog,
   onOpenConfig,
   onOpenApiKey,
+  onOpenApkSettings,
   onOpenAddCustom,
   onOpenPersonality,
   onOpenHistory,
+  onOpenInstallModal,
   apiKey,
   onScrapeModels,
   onScrapeDocs,
@@ -282,6 +287,10 @@ export const AgentDeck: React.FC<AgentDeckProps> = ({
 
       {/* Bottom Section: Agent Fine-Tuning & Key Status */}
       <div className="p-3.5 border-t border-white/5 bg-[#12151e] space-y-2">
+        {onOpenInstallModal && (
+          <PWAInstallButton onOpenModal={onOpenInstallModal} />
+        )}
+
         {onOpenPersonality && (
           <button
             onClick={() => {
@@ -318,22 +327,39 @@ export const AgentDeck: React.FC<AgentDeckProps> = ({
           </button>
         )}
 
-        <button
-          onClick={() => {
-            onOpenApiKey();
-            if (onCloseMobile) onCloseMobile();
-          }}
-          className="w-full px-3 py-2 rounded-lg text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/40 transition-colors flex items-center justify-between min-h-[40px]"
-          aria-label="Open API settings"
-        >
-          <div className="flex items-center gap-2">
-            <Shield className="w-3.5 h-3.5 text-neutral-500" />
-            <span className="truncate">
-              {apiKey ? 'API Key Connected' : 'Key Not Configured'}
-            </span>
-          </div>
-          <span className="text-[11px] text-indigo-400 font-medium">Settings</span>
-        </button>
+        <div className="flex items-center gap-1.5 pt-0.5">
+          <button
+            onClick={() => {
+              onOpenApiKey();
+              if (onCloseMobile) onCloseMobile();
+            }}
+            className="flex-1 px-3 py-2 rounded-lg text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/40 transition-colors flex items-center justify-between min-h-[40px] cursor-pointer"
+            aria-label="Open Settings"
+          >
+            <div className="flex items-center gap-2 truncate">
+              <Shield className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+              <span className="truncate">
+                {apiKey ? 'API Key Saved' : 'Settings'}
+              </span>
+            </div>
+            <span className="text-[11px] text-indigo-400 font-medium ml-1">Settings</span>
+          </button>
+
+          {onOpenApkSettings && (
+            <button
+              onClick={() => {
+                onOpenApkSettings();
+                if (onCloseMobile) onCloseMobile();
+              }}
+              className="px-2.5 py-2 rounded-lg text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-950/30 hover:bg-emerald-950/60 border border-emerald-800/40 transition-colors flex items-center gap-1.5 min-h-[40px] cursor-pointer shrink-0"
+              title="Android APK settings and builder"
+              aria-label="Open Android APK Settings"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span className="text-[11px] font-semibold">.APK</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
